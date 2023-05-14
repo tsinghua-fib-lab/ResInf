@@ -8,7 +8,7 @@ This repository contains the source codes and data for our paper submitted to *N
 
 Chang Liu, Fengli Xu, Chen Gao, Zhaocheng Wang, Yong Li and Jianxi Gao, **Data-driven resilience inference for complex networked systems**.
 
-**Code Ocean Capsult link：** Coming soon.
+**Code Ocean Capsule link：** Coming soon.
 
 # Installation
 
