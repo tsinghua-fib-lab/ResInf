@@ -4,7 +4,7 @@
 
 ---
 
-This repository contains the source codes and data for our paper submitted to *Nature Machine Intelligence* :
+This repository contains the source codes and data for our paper submitted and under review :
 
 Chang Liu, Fengli Xu, Chen Gao, Zhaocheng Wang, Yong Li and Jianxi Gao, **Data-driven resilience inference for complex networked systems**.
 
