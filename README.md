@@ -1,14 +1,13 @@
 # ResInf resilience inference
 
-![Model](imgs/resinf.png) 
+![Model](imgs/ResInf-1.png) 
 
 ---
 
 This repository contains the source codes and data for our paper submitted and under review :
 
-Chang Liu, Fengli Xu, Chen Gao, Zhaocheng Wang, Yong Li and Jianxi Gao, **Data-driven resilience inference for complex networked systems**.
+Chang Liu, Fengli Xu, Chen Gao, Zhaocheng Wang, Yong Li and Jianxi Gao, **Deep learning resilience inference for complex networked systems**.
 
-**Code Ocean Capsule link：** Coming soon.
 
 # Installation
 
@@ -34,7 +33,7 @@ To train a model for resilience inference of mutualistic networks, run:
 
 `python main.py --mech 1`
 
-while gene regulatory networks and neuronal dynamics correspond to 2 and 3, respectively.
+while gene regulatory networks and neuronal networks correspond to 2 and 3, respectively.
 
 # License
 
