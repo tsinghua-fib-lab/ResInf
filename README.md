@@ -25,7 +25,9 @@ Chang Liu, Fengli Xu, Chen Gao, Zhaocheng Wang, Yong Li and Jianxi Gao, **Deep l
 
 You can get network data from the following Dropbox link: 
 
-https://www.dropbox.com/sh/azcolc4xpf37kg8/AABPxHFpIlIR2l7qhgGg3yoXa?dl=0
+https://www.dropbox.com/scl/fo/6j4au1984gy89ywi7iinh/h?rlkey=4fqrdnm8tfwgho9ncv8r8q5eh&dl=0
+
+Download the data and put it into `data` folder.
 
 # Training 
 
