@@ -45,7 +45,7 @@ parser.add_argument('--seed', type=int, default=2021, help='Random Seed')
 parser.add_argument('--T', type=float, default=200., help='Terminal Time')
 parser.add_argument('--operator', type=str,
                     choices=['lap', 'norm_lap', 'kipf', 'norm_adj' ], default='norm_adj')
-parser.add_argument('--epoch', type=int, default=50)
+parser.add_argument('--epoch', type=int, default=100)
 parser.add_argument('--train_size', type=int, default=1)
 parser.add_argument('--valid_size', type=int, default=1)
 parser.add_argument('--test_size', type=int, default=1)
