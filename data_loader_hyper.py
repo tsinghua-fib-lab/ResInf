@@ -5,6 +5,7 @@ import scipy.sparse as sp
 import random
 from time import time
 from collections import defaultdict
+import pickle
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -31,11 +32,11 @@ class NetDataset(Dataset):
         cc = list(zip(self.As, self.numes, self.rs, self.basers))
         random.shuffle(cc)
         self.As[:], self.numes[:], self.rs[:], self.basers[:]= zip(*cc)
-    def load_dataset(self, mode, type, args):
-        As = json.load(open('../data/mech_{}_normal_As.json'.format(args.mech)))
-        numes = json.load(open('../data/mech_{}_normal_numes.json'.format(args.mech)))
-        rs = json.load(open('../data/mech_{}_normal_rs.json'.format(args.mech)))
-        basers = json.load(open('../data/mech_{}_normal_basers.json'.format(args.mech)))
+    def load_dataset(self, mode, type, args):        
+        As = pickle.load(open('data/mech_{}/As.pkl'.format(args.mech), 'rb'))
+        numes = pickle.load(open('data/mech_{}/numes.pkl'.format(args.mech), 'rb'))
+        rs = pickle.load(open('data/mech_{}/rs.pkl'.format(args.mech), 'rb'))
+        basers = pickle.load(open('data/mech_{}/basers.pkl'.format(args.mech), 'rb'))
         return As, numes, rs, basers
     def __getitem__(self, index):
         return np.array(self.As[index]), np.array(self.numes[index]), self.rs[index], self.basers[index]
