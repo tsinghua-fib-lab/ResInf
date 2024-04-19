@@ -1,5 +1,7 @@
-# ResInf---Deep Learning Resilience Inference for Complex Networks
+# <p align="center"> Deep Learning Resilience Inference for Complex Networked Systems </p>
+#####  <p align="center"> Chang Liu<sup>1</sup>, [Fengli Xu<sup>1</sup>](https://fenglixu.github.io/), [Chen Gao<sup>1</sup>](https://fi.ee.tsinghua.edu.cn/~gaochen/), Zhaocheng Wang<sup>1</sup>, [Yong Li<sup>1</sup>](https://fi.ee.tsinghua.edu.cn/~liyong/), [Jianxi Gao<sup>2</sup>](https://www.gaojianxi.com/)
 
+ ##### <p align="center"> <sup>1</sup>Tsinghua University, <sup>2</sup>Rensselaer Polytechnic Institute</p>
 ![Model](imgs/ResInf.png) 
 
 ---
