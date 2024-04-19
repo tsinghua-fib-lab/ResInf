@@ -4,15 +4,10 @@ from prettytable import PrettyTable
 import numpy as np
 import random
 from sklearn import metrics
-
-
-def calc_similarity(x_pred, x_final):
-    '''
-    cosine similarity
-    '''
-    cosine_similar = F.cosine_similarity(x_pred, x_final,dim=1)
-    distance = torch.dist(x_pred, x_final,2)
-    return cosine_similar, distance
+import wandb
+from tqdm import tqdm
+from utils import *
+import os
 
 def normalized_laplacian(A):
     """
@@ -89,115 +84,29 @@ def process_instance(A, numericals, r_truth, r_base, args):
     r_base = torch.from_numpy(np.array(r_base)).to(torch.float32).to(device)
     return A, numericals, r_truth, r_base
 
-def validation_before(model, t_valid, criterion, args, epsilon=1e-6):
-    '''
-    model : Model
-    t_valid: Validation DataLoader
-    args : System arguments
-    '''
-    if args.gpu >= 0:
-        device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
-    else:
-        device = torch.device('cpu')
-    
-    model.eval()
-    with torch.no_grad():
-        all_count = 0
-        true_count = 0
-        valid_loss = 0
-        positive_count = 0
-        true_base = 0
-        preds = []
-        truths = []
-        base_preds = []
-        cos_neg = []
-        base_cos_neg = []
-        cos_pos = []
-        base_cos_pos = []
-        dis_neg = []
-        base_dis_neg = []
-        dis_pos = []
-        base_dis_pos = []
-        pred_labels = []
-       
-        high_dim_vecs = torch.zeros(1, 1).to(device)
-        for i, (A, numericals, r_truth, r_base) in enumerate(t_valid):
-            A = A.numpy()
-            numericals = numericals.numpy()
-            A = A.squeeze(0)
-            numericals = numericals.squeeze(0)
-            all_count += 1
-            check = np.any(np.array(A))
-            if not check:
-                continue
-            A, numericals, r_truth, r_base = process_instance(A, numericals, r_truth, r_base, args)
-            if args.mech == 1:
-                numericals_use = numericals.index_select(0, torch.tensor(random.choices(list(range(11)), k=args.K)).to(device))
-            elif args.mech == 2 or args.mech == 3:
-                numericals_use = numericals.index_select(0, torch.tensor(random.choices(list(range(5)), k=args.K)).to(device))
-            if args.rand_guess:
-                r_pred = torch.randint(low=0, high=2,size=(1,)).to(torch.float32).to(device)
-            else:
-                if args.use == 'middle':
-                    r_pred, _= model(numericals_use[:,:,int(args.time_tick/2):int(args.time_tick/2)+args.hidden], A)
-                elif args.use == 'start':
-                    r_pred, high_dim_vec= model(numericals_use[:,:,1:1+args.hidden], A)
-                    high_dim_vec = high_dim_vec.contiguous().view(1, -1)
-                    cosine_similar, distance = calc_similarity(numericals_use[:, -1, args.hidden].view(1, -1), numericals_use[:, -1, -1].view(1, -1))
-                    base_cos, base_dis = calc_similarity(numericals_use[:, -1, 1].view(1, -1), numericals_use[:, -1, -1].view(1, -1))
-                    high_dim_vecs = torch.cat([high_dim_vecs, high_dim_vec], dim=0)
-                elif args.use == 'end':
-                    r_pred, _= model(numericals_use[:,:,-1-args.hidden:-1], A)
-                else:
-                    raise NotImplementedError
-            r_pred = min(r_pred + epsilon, torch.FloatTensor([1]).to(device))
-            if not torch.isnan(r_pred):
-                preds.append(r_pred.item())
-                truths.append(r_truth.item())
-                base_preds.append(r_base.item())
-                pred_labels.append(round(r_pred.item()))
-                if round(r_pred.item()) == r_truth.item():
-                    true_count += 1
-                if (r_base.item()) == r_truth.item():
-                    true_base += 1
-                if r_truth.item() == 1:
-                    positive_count += 1
-                    cos_pos.append(cosine_similar.item())
-                    dis_pos.append(distance.item())
-                    base_cos_pos.append(base_cos.item())
-                    base_dis_pos.append(base_dis.item())
-                else:
-                    cos_neg.append(cosine_similar.item())
-                    dis_neg.append(distance.item())
-                    base_cos_neg.append(base_cos.item())
-                    base_dis_neg.append(base_dis.item())
-        
-        acc = true_count/all_count
-        acc_base = true_base/all_count
-        positive = positive_count/all_count
-        preds = np.array(preds)
-        truths = np.array(truths)
-        base_preds = np.array(base_preds)
-        my_recall = metrics.recall_score(truths, preds.round(), average='weighted')
-        base_recall = metrics.recall_score(truths, base_preds, average='weighted')
-        my_f1 = metrics.f1_score(truths, preds.round(), average='weighted')
-        base_f1 = metrics.f1_score(truths,base_preds, average='weighted')
-        high_dim_vecs = high_dim_vecs.detach().cpu().numpy()
-        high_dim_vecs = np.array(high_dim_vecs)
-        train_res = PrettyTable()
-        train_res.field_names = ["Epoch", "Valid Loss", "Accuracy", "Accuracy_bl", "f1", "f1_bl", "recall", "recall_bl", "Positive"]
-        train_res.add_row(['Before', valid_loss, acc, acc_base, my_f1, base_f1, my_recall, base_recall, positive])
-        print(train_res)
 
-def train_valid(model, train_dataset, valid_dataset, t_train, t_valid, optimizer, criterion, args, epsilon=1e-6):
+def train_valid(model, train_dataset, valid_dataset, train_dataloader, valid_dataloader, optimizer, criterion, args, epsilon=1e-6):
     if args.gpu >= 0:
         device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
     else:
         device = torch.device('cpu')
+
+    if args.use_wandb:
+
+        dir = wandb.run.dir
+    else:
+        dir = os.path.dirname(os.path.abspath(__file__))
+
+    make_model_dirs(dir)
+
+    if args.save_every:
+        print('Save models Every Epoch.')
+    checkpoint_saver = CheckpointSaver(dirpath=os.path.join(dir, 'checkpoints'), decreasing=False, top_n=1, save_every=args.save_every)
+    
     for epoch in range(args.epoch):
         model.train()
         total_loss = 0
-        for i, (A, numericals, r_truth, r_base) in enumerate(t_train):
+        for i, (A, numericals, r_truth, r_base) in tqdm(enumerate(train_dataloader), total=len(train_dataset)//args.train_size+1):
             A = A.numpy()
             numericals = numericals.numpy()
             A = A.squeeze(0)
@@ -205,22 +114,15 @@ def train_valid(model, train_dataset, valid_dataset, t_train, t_valid, optimizer
             check = np.any(np.array(A))
             if not check:
                 continue
+
             A, numericals, r_truth, r_base = process_instance(A, numericals, r_truth, r_base, args)
             numericals_use = numericals.index_select(0, torch.tensor(random.choices(list(range(numericals.shape[0])), k=args.K)).to(device))
             if args.rand_guess:
                 r_pred = torch.randint(low=0, high=2,size=(1,)).to(torch.float32).to(device)
             else:
-                if args.use == 'middle':
-                    r_pred, _ = model(numericals_use[:,:,int(args.time_tick/2):int(args.time_tick/2)+args.hidden], A)
-                elif args.use == 'start':
                     # print(numericals_use.shape)
                     # print(A.shape)                    
-                    r_pred, _, _= model(numericals_use[:,:,1:1+args.hidden], A)
-                    cosine_similar, distance = calc_similarity(numericals_use[:, -1, args.hidden].view(1, -1), numericals_use[:, -1, -1].view(1, -1))
-                elif args.use == 'end':
-                    r_pred, _= model(numericals_use[:,:,-1-args.hidden:-1], A)
-                else:
-                    raise NotImplementedError
+                r_pred, _, _= model(numericals_use[:,:,1:1+args.hidden], A)
             r_pred = min(r_pred + epsilon, torch.FloatTensor([1]).to(device))
             if not torch.isnan(r_pred):
                 loss = criterion(r_pred, r_truth)
@@ -232,108 +134,156 @@ def train_valid(model, train_dataset, valid_dataset, t_train, t_valid, optimizer
         print('Total Loss in Epoch {0}:'.format(epoch))
         print(total_loss)
 
-        with torch.no_grad():
-            all_count = 0
-            true_count = 0
-            valid_loss = 0
-            true_base = 0
-            positive_count = 0
-            preds = []
-            truths = []
-            base_preds = []
-            cos_neg = []
-            base_cos_neg = []
-            cos_pos = []
-            base_cos_pos = []
-            dis_neg = []
-            base_dis_neg = []
-            dis_pos = []
-            base_dis_pos = []
-            pred_labels = []
-            if args.use_model == 'single' or args.use_model == 'sig_classi' or args.use_model == 'sig_mean' or args.use_model == 'sig_multiclassi' or args.use_model == 'sig_woat' or args.use_model == 'sig_wosd' or args.use_model == 'new' or args.use_model == 'sig_max' or args.use_model == 'transgnn' or args.use_model == 'IND' or args.use_model == 'FC':
+        if args.use_wandb:
+            wandb.log({'train_loss': total_loss, "epoch": epoch})
+        
+        if epoch > 0 and epoch % args.valid_every == 0:
+            with torch.no_grad():
+                all_count = 0
+                true_count = 0
+                valid_loss = 0
+                true_base = 0
+                positive_count = 0
+                preds = []
+                truths = []
+                base_preds = []
+                pred_labels = []
                 high_dim_vecs = torch.zeros(1, 1).to(device)
-            else:
-                high_dim_vecs = torch.zeros(1, 2).to(device)
-            for i, (A, numericals, r_truth, r_base) in enumerate(t_valid):
-                A = A.numpy()
-                numericals = numericals.numpy()
-                A = A.squeeze(0)
-                numericals = numericals.squeeze(0)
-                check = np.any(np.array(A))
-                if not check:
-                    continue
-                all_count += 1
-                
-                A, numericals, r_truth, r_base = process_instance(A, numericals, r_truth, r_base, args)
-                # if args.mech == 1:
-                #     numericals_use = numericals.index_select(0, torch.tensor(random.choices(list(range(11)), k=args.K)).to(device))
-                # elif args.mech == 2 or args.mech == 3:
-                #     numericals_use = numericals.index_select(0, torch.tensor(random.choices(list(range(5)), k=args.K)).to(device))
-                # else:
-                numericals_use = numericals.index_select(0, torch.tensor(random.choices(list(range(numericals.shape[0])), k=args.K)).to(device))
-                if args.rand_guess:
-                    r_pred = torch.randint(low=0, high=2,size=(1,)).to(torch.float32).to(device)
-                else:
-                    if args.use == 'middle':
-                        r_pred,_= model(numericals_use[:,:,int(args.time_tick/2):int(args.time_tick/2)+args.hidden], A)
-                    elif args.use == 'start':
-                        if args.use_model == 'single' or args.use_model == 'sig_classi' or args.use_model == 'sig_mean' or args.use_model == 'sig_multiclassi' or args.use_model == 'sig_woat' or args.use_model == 'sig_wosd' or args.use_model == 'new' or args.use_model == 'sig_max' or args.use_model == 'transgnn' or args.use_model == 'IND':
-                            r_pred,high_dim_vec,_ = model(numericals_use[:,:,1:1+args.hidden], A)
-                        else:
-                            r_pred,high_dim_vec = model(numericals_use[:,:,1:1+args.hidden], A)
+                for i, (A, numericals, r_truth, r_base) in tqdm(enumerate(valid_dataloader), total=len(valid_dataset)//args.valid_size+1):
+                    A = A.numpy()
+                    numericals = numericals.numpy()
+                    A = A.squeeze(0)
+                    numericals = numericals.squeeze(0)
+                    check = np.any(np.array(A))
+                    if not check:
+                        continue
+                    all_count += 1
+                    A, numericals, r_truth, r_base = process_instance(A, numericals, r_truth, r_base, args)
+                    numericals_use = numericals.index_select(0, torch.tensor(random.choices(list(range(numericals.shape[0])), k=args.K)).to(device))
+                    if args.rand_guess:
+                        r_pred = torch.randint(low=0, high=2,size=(1,)).to(torch.float32).to(device)
+                    else:
+                        r_pred,high_dim_vec,_ = model(numericals_use[:,:,1:1+args.hidden], A)
                         high_dim_vec = high_dim_vec.contiguous().view(1, -1)
-                        cosine_similar, distance = calc_similarity(numericals_use[:, -1, args.hidden].view(1, -1), numericals_use[:, -1, -1].view(1, -1))
-                        base_cos, base_dis = calc_similarity(numericals_use[:, -1, 1].view(1, -1), numericals_use[:, -1, -1].view(1, -1))
-                        high_dim_vecs = torch.cat([high_dim_vecs, high_dim_vec], dim=0)
-                    elif args.use == 'end':
-                        r_pred,_ = model(numericals_use[:,:,-1-args.hidden:-1], A)
-                    else:
-                        raise NotImplementedError
-                r_pred = min(r_pred + epsilon, torch.FloatTensor([1]).to(device))
-                if not torch.isnan(r_pred):
-                    loss = criterion(r_pred, r_truth)
-                    valid_loss += loss.item()
-                    preds.append(r_pred.item())
-                    truths.append(r_truth.item())
-                    base_preds.append(r_base.item())
-                    pred_labels.append(round(r_pred.item()))
-                    if round(r_pred.item()) == r_truth.item():
-                        true_count += 1
-                    if (r_base.item()) == r_truth.item():
-                        true_base += 1
-                    if r_truth.item() == 1:
-                        positive_count += 1
-                        cos_pos.append(cosine_similar.item())
-                        dis_pos.append(distance.item())
-                        base_cos_pos.append(base_cos.item())
-                        base_dis_pos.append(base_dis.item())
-                    else:
-                        cos_neg.append(cosine_similar.item())
-                        dis_neg.append(distance.item())
-                        base_cos_neg.append(base_cos.item())
-                        base_dis_neg.append(base_dis.item())
-            valid_loss = valid_loss/len(valid_dataset)
-            acc = true_count/all_count
-            acc_base = true_base/all_count
-            positive = positive_count/all_count
-            preds = np.array(preds)
-            truths = np.array(truths)
-            base_preds = np.array(base_preds)
-            my_auc = 0
-            base_auc = 0
-            my_f1 = metrics.f1_score(truths, preds.round(), average='weighted')
-            base_f1 = metrics.f1_score(truths,base_preds, average='weighted')
-            my_mcc = metrics.matthews_corrcoef(truths, preds.round())
-            base_mcc = metrics.matthews_corrcoef(truths, base_preds)
-            high_dim_vecs = high_dim_vecs.detach().cpu().numpy()
-            high_dim_vecs = np.array(high_dim_vecs)
-            train_res = PrettyTable()
-            train_res.field_names = ["Epoch", "Train Loss", "Valid Loss", "Accuracy", "Accuracy_bl", "AUC", "AUC_bl", "f1", "f1_bl", "mcc", "mcc_bl", "Positive"]
-            train_res.add_row([epoch, total_loss, valid_loss, acc, acc_base, my_auc, base_auc, my_f1, base_f1, my_mcc, base_mcc, positive])
-            print(train_res)
+
+                    r_pred = min(r_pred + epsilon, torch.FloatTensor([1]).to(device))
+                    if not torch.isnan(r_pred):
+                        loss = criterion(r_pred, r_truth)
+                        valid_loss += loss.item()
+                        preds.append(r_pred.item())
+                        truths.append(r_truth.item())
+                        base_preds.append(r_base.item())
+                        pred_labels.append(round(r_pred.item()))
+                        if round(r_pred.item()) == r_truth.item():
+                            true_count += 1
+                        if (r_base.item()) == r_truth.item():
+                            true_base += 1
+                        if r_truth.item() == 1:
+                            positive_count += 1
+                            
+                        else:
+                            pass
+                valid_loss = valid_loss/len(valid_dataset)
+                acc = true_count/all_count
+                acc_base = true_base/all_count
+                positive = positive_count/all_count
+                preds = np.array(preds)
+                truths = np.array(truths)
+                base_preds = np.array(base_preds)
+                my_f1 = metrics.f1_score(truths, preds.round(), average='weighted')
+                base_f1 = metrics.f1_score(truths,base_preds, average='weighted')
+                my_mcc = metrics.matthews_corrcoef(truths, preds.round())
+                base_mcc = metrics.matthews_corrcoef(truths, base_preds)
+                high_dim_vecs = high_dim_vecs.detach().cpu().numpy()
+                high_dim_vecs = np.array(high_dim_vecs)
+                checkpoint_saver(model, epoch, my_f1)
+                train_res = PrettyTable()
+                train_res.field_names = ["Epoch", "Train Loss", "Valid Loss", "Accuracy", "Accuracy_bl", "f1", "f1_bl", "mcc", "mcc_bl", "Positive"]
+                train_res.add_row([epoch, total_loss, valid_loss, acc, acc_base, my_f1, base_f1, my_mcc, base_mcc, positive])
+                print(train_res)
+
+                if args.use_wandb:
+                    wandb.log({'val_loss': valid_loss, 'val_acc': acc, 'val_acc_bl': acc_base, 'val_f1': my_f1, 'val_f1_bl': base_f1, 'val_mcc': my_mcc, 'val_mcc_bl': base_mcc, 'val_positive': positive, 'epoch': epoch})
     return epoch, total_loss
 
-def test(model, t_test, criterion, args, epoch, total_loss, epsilon=1e-6):
+def test(model, test_dataloader, criterion, args, epoch, total_loss, epsilon=1e-6):
+    if args.gpu >= 0:
+        device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
+    else:
+        device = torch.device('cpu')
+    model.eval()
+    with torch.no_grad():
+        all_count = 0
+        true_count = 0
+        true_base = 0
+        test_loss = 0
+        positive_count = 0
+        preds = []
+        truths = []
+        base_preds = []
+
+        pred_labels = []
+        
+        high_dim_vecs = torch.zeros(1,1).to(device)
+
+        for i, (A, numericals, r_truth, r_base) in tqdm(enumerate(test_dataloader)):
+            A = A.numpy()
+            numericals = numericals.numpy()
+            A = A.squeeze(0)
+            numericals = numericals.squeeze(0)
+            check = np.any(np.array(A))
+            if not check:
+                continue
+            all_count += 1
+            A, numericals, r_truth, r_base= process_instance(A, numericals, r_truth, r_base, args)
+            numericals_use = numericals.index_select(0, torch.tensor(random.choices(list(range(numericals.shape[0])), k=args.K)).to(device))
+            if args.rand_guess:
+                r_pred = torch.randint(low=0, high=2,size=(1,)).to(torch.float32).to(device)
+            else:
+
+                
+                r_pred, high_dim_vec,_ = model(numericals_use[:,:,1:1+args.hidden], A)
+               
+                high_dim_vec = high_dim_vec.contiguous().view(1, -1)
+
+
+            r_pred = min(r_pred + epsilon, torch.FloatTensor([1]).to(device))
+            if not torch.isnan(r_pred):
+                loss = criterion(r_pred, r_truth)
+                test_loss += loss.item()
+                preds.append(r_pred.item())
+                truths.append(r_truth.item())
+                base_preds.append(r_base.item())
+                pred_labels.append(round(r_pred.item()))
+                if round(r_pred.item()) == r_truth.item():
+                    true_count += 1
+                if r_truth.item() == r_base.item():
+                    true_base += 1
+                if r_truth.item() == 1:
+                    positive_count += 1
+                    
+                else:
+                    pass
+        test_loss = test_loss/len(truths)
+        acc = true_count/all_count
+        acc_base = true_base/all_count
+        positive = positive_count/all_count
+        preds = np.array(preds)
+        truths = np.array(truths)
+        base_preds = np.array(base_preds)
+        my_f1 = metrics.f1_score(truths, preds.round(), average='weighted')
+        base_f1 = metrics.f1_score(truths,base_preds, average='weighted')
+        my_mcc = metrics.matthews_corrcoef(truths, preds.round())
+        base_mcc = metrics.matthews_corrcoef(truths, base_preds)
+        high_dim_vecs = high_dim_vecs.detach().cpu().numpy()
+        high_dim_vecs = np.array(high_dim_vecs)
+        train_res = PrettyTable()
+        train_res.field_names = ["Epoch", "Train Loss", "Test Loss", "Accuracy", "Accuracy_bl", "f1", "f1_bl", "mcc", "mcc_bl", "Positive"]
+        train_res.add_row([epoch, total_loss, test_loss, acc, acc_base, my_f1, base_f1, my_mcc, base_mcc, positive])
+        print(train_res)
+
+
+def test_forplot(model, test_dataloader, criterion, args, epoch, total_loss, epsilon=1e-6):
     if args.gpu >= 0:
         device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
     else:
@@ -361,7 +311,7 @@ def test(model, t_test, criterion, args, epoch, total_loss, epsilon=1e-6):
             high_dim_vecs = torch.zeros(1,1).to(device)
         else:
             high_dim_vecs = torch.zeros(1,2).to(device)
-        for i, (A, numericals, r_truth, r_base) in enumerate(t_test):
+        for i, (A, numericals, r_truth, r_base) in tqdm(enumerate(test_dataloader), total=len(test_dataloader)):
             A = A.numpy()
             numericals = numericals.numpy()
             A = A.squeeze(0)
@@ -371,30 +321,16 @@ def test(model, t_test, criterion, args, epoch, total_loss, epsilon=1e-6):
                 continue
             all_count += 1
             A, numericals, r_truth, r_base= process_instance(A, numericals, r_truth, r_base, args)
-            # if args.mech == 1:
-            #     numericals_use = numericals.index_select(0, torch.tensor(random.choices(list(range(11)), k=args.K)).to(device))
-            # elif args.mech == 2 or args.mech == 3:
-            #     numericals_use = numericals.index_select(0, torch.tensor(random.choices(list(range(5)), k=args.K)).to(device))
-            # else:
+
             numericals_use = numericals.index_select(0, torch.tensor(random.choices(list(range(numericals.shape[0])), k=args.K)).to(device))
             if args.rand_guess:
                 r_pred = torch.randint(low=0, high=2,size=(1,)).to(torch.float32).to(device)
             else:
-                if args.use == 'middle':
-                    r_pred, _= model(numericals_use[:,:,int(args.time_tick/2):int(args.time_tick/2)+args.hidden], A)
-                elif args.use == 'start':
-                    if args.use_model == 'single' or args.use_model == 'sig_classi' or args.use_model == 'sig_mean' or args.use_model == 'sig_multiclassi' or args.use_model == 'sig_woat' or args.use_model == 'sig_wosd' or args.use_model == 'new' or args.use_model == 'sig_max' or args.use_model == 'transgnn' or args.use_model == 'IND':
-                        r_pred, high_dim_vec,_ = model(numericals_use[:,:,1:1+args.hidden], A)
-                    else:
-                        r_pred, high_dim_vec = model(numericals_use[:,:,1:1+args.hidden], A)
-                    high_dim_vec = high_dim_vec.contiguous().view(1, -1)
-                    cosine_similar, distance = calc_similarity(numericals_use[:, -1, args.hidden].view(1, -1), numericals_use[:, -1, -1].view(1, -1))
-                    base_cos, base_dis = calc_similarity(numericals_use[:, -1, 1].view(1, -1), numericals_use[:, -1, -1].view(1, -1))
-                    high_dim_vecs = torch.cat([high_dim_vecs, high_dim_vec], dim=0)
-                elif args.use == 'end':
-                    r_pred = model(numericals_use[:,:,-1-args.hidden:-1], A)
-                else:
-                    raise NotImplementedError
+               
+                r_pred, high_dim_vec,_ = model(numericals_use[:,:,1:1+args.hidden], A)
+                
+                high_dim_vec = high_dim_vec.contiguous().view(1, -1)
+                
             r_pred = min(r_pred + epsilon, torch.FloatTensor([1]).to(device))
             if not torch.isnan(r_pred):
                 loss = criterion(r_pred, r_truth)
@@ -408,16 +344,10 @@ def test(model, t_test, criterion, args, epoch, total_loss, epsilon=1e-6):
                 if r_truth.item() == r_base.item():
                     true_base += 1
                 if r_truth.item() == 1:
-                    positive_count += 1
-                    cos_pos.append(cosine_similar.item())
-                    dis_pos.append(distance.item())
-                    base_cos_pos.append(base_cos.item())
-                    base_dis_pos.append(base_dis.item())
+                    positive_count += 1   
                 else:
-                    cos_neg.append(cosine_similar.item())
-                    dis_neg.append(distance.item())
-                    base_cos_neg.append(base_cos.item())
-                    base_dis_neg.append(base_dis.item())
+                    pass
+        test_loss = test_loss/len(truths)
         acc = true_count/all_count
         acc_base = true_base/all_count
         positive = positive_count/all_count
@@ -430,8 +360,9 @@ def test(model, t_test, criterion, args, epoch, total_loss, epsilon=1e-6):
         base_mcc = metrics.matthews_corrcoef(truths, base_preds)
         high_dim_vecs = high_dim_vecs.detach().cpu().numpy()
         high_dim_vecs = np.array(high_dim_vecs)
-    
         train_res = PrettyTable()
         train_res.field_names = ["Epoch", "Train Loss", "Test Loss", "Accuracy", "Accuracy_bl", "f1", "f1_bl", "mcc", "mcc_bl", "Positive"]
         train_res.add_row([epoch, total_loss, test_loss, acc, acc_base, my_f1, base_f1, my_mcc, base_mcc, positive])
         print(train_res)
+
+    return preds, truths, preds.round(), my_f1, acc, my_mcc

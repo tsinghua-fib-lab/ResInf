@@ -99,8 +99,6 @@ class ResInf(nn.Module):
 
         self.hidden_layers_num = hidden_layers
 
-        
-
         self.positional_encoding_layer = PositionalEncoder(d_model=self.dim_val, dropout=0.1, max_seq_len=seq_len)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model = self.dim_val, nhead=self.n_heads, batch_first = True)
