@@ -50,6 +50,7 @@ You can also replace Line 51 in the demo script with `args = parser.parse_args(a
 
 If you want to use `wandb`, please add `--use_wandb` to each instruction.
 
+## Synthetic datasets
 To train a model for resilience inference of mutualistic networks, run:
 
 `python run_synthesis.py --mech 1`
@@ -62,10 +63,7 @@ To train a model for epidemic networks, for example, CNS, run:
 
 you can replace `CNS` with `SFHH`, `CM`, and `CP` to train and test on other epidemic networks.
 
-You can train and test our model on microbial communities, run:
-
-`python run_micro.py`
-
+## Generalizability
 To evaluate the generalizability of ResInf across different dynamics parameters, run:
 
 `python run_general_para.py --mech 1`
@@ -78,6 +76,10 @@ To evaluate the generalizability of ResInf across different dynamics equations, 
 
 `mech 4` and `mech 5` correspond to SIS and Inhibitory dynamics, respectively. The above instruction indicates that you train the model on mixed networks with `SIS` and `Inhibitory` dynamics, and test on `Neuronal` networks.
 
+## Real-world datasets
+You can train and test our model on microbial communities, run:
+
+`python run_micro.py`
 
 # License
 
