@@ -83,6 +83,10 @@ You can train and test our model on microbial communities, run:
 
 `python run_micro.py`
 
+or you can train our model on simulated data (SIS dynamics systems) and test it on microbial communities, run:
+
+`python run_s2r.py`
+
 # License
 
 Please see the [license](LICENSE) for further details.
