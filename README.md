@@ -6,7 +6,7 @@
 
 ---
 
-This repository contains the source codes and data for our paper submitted and under review :
+This repository contains the source codes and data for our paper published in *Nature Communications*:
 
 Chang Liu, Fengli Xu, Chen Gao, Zhaocheng Wang, Yong Li and Jianxi Gao, **Deep learning resilience inference for complex networked systems**.
 
